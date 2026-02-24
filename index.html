@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EyeGuard — Detector de Fatiga Ocular</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:      #080c10;
+      --panel:   #0d1318;
+      --border:  #1a2530;
+      --accent:  #00d4aa;
+      --accent2: #0088ff;
+      --warn:    #ff6b35;
+      --danger:  #ff2d55;
+      --text:    #c8d8e8;
+      --muted:   #4a6070;
+      --glow:    rgba(0,212,170,0.15);
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0,212,170,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,170,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 24px 20px;
+    }
+
+    /* HEADER */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo { display:flex; align-items:center; gap:14px; }
+
+    .logo-icon {
+      width: 46px; height: 46px;
+      border: 2px solid var(--accent);
+      border-radius: 12px;
+      display: flex; align-items:center; justify-content:center;
+      font-size: 22px;
+      animation: pulse-border 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse-border {
+      0%,100% { box-shadow: 0 0 16px var(--glow); }
+      50%      { box-shadow: 0 0 32px rgba(0,212,170,0.35); }
+    }
+
+    .logo h1 {
+      font-weight: 800; font-size: 1.5rem;
+      letter-spacing: -0.02em; color: #fff;
+    }
+
+    .logo-sub {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.6rem; color: var(--accent);
+      letter-spacing: 0.15em; display:block; margin-top:2px;
+    }
+
+    .status-badge {
+      font-family: 'Space Mono', monospace;
+      font-size: 0.7rem; padding: 6px 14px;
+      border-radius: 20px; border: 1px solid var(--border);
+      color: var(--muted); letter-spacing: 0.1em; transition: all 0.3s;
+    }
+    .status-badge.active {
+      border-color: var(--accent); color: var(--accent); background: var(--glow);
+    }
+
+    /* GRID */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 18px;
+    }
+
+    /* CAMERA PANEL */
+    .camera-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .camera-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items:center; justify-content:space-between;
+    }
+
+    .camera-header h2 {
+      font-size: 0.8rem; font-weight: 600;
+      letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase;
+    }
+
+    .rec-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%; background: var(--muted);
+    }
+    .rec-dot.active {
+      background: var(--danger);
+      animation: blink 1s ease-in-out infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+    .video-container {
+      position: relative;
+      aspect-ratio: 4/3;
+      background: #000;
+    }
+
+    #video, #canvas {
+      position: absolute; inset:0;
+      width:100%; height:100%; object-fit:cover;
+    }
+    #video  { transform: scaleX(-1); }
+    #canvas { transform: scaleX(-1); }
+
+    /* Chips encima del video */
+    .overlay-info {
+      position: absolute; bottom:12px; left:12px; right:12px;
+      display: none; gap:8px; z-index:10; flex-wrap:wrap;
+    }
+
+    .overlay-chip {
+      font-family: 'Space Mono', monospace; font-size: 0.62rem;
+      background: rgba(8,12,16,0.88); border: 1px solid var(--border);
+      border-radius: 8px; padding: 5px 10px;
+      backdrop-filter: blur(8px); color: var(--text);
+    }
+    .overlay-chip span { color: var(--accent); }
+
+    /* Pantalla de inicio */
+    .start-overlay {
+      position: absolute; inset:0;
+      display: flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      background: rgba(8,12,16,0.92);
+      z-index: 20; gap:16px;
+      transition: opacity 0.3s;
+    }
+    .start-overlay.hidden { opacity:0; pointer-events:none; }
+
+    .start-overlay p {
+      font-family: 'Space Mono', monospace; font-size: 0.68rem;
+      color: var(--muted); text-align:center; line-height:1.7;
+    }
+
+    .btn-start {
+      font-family: 'Syne', sans-serif; font-weight: 700;
+      font-size: 1rem; letter-spacing: 0.04em;
+      background: var(--accent); color: #000;
+      border: none; border-radius: 14px;
+      padding: 14px 38px; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-start:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 28px rgba(0,212,170,0.45);
+    }
+    .btn-start:disabled { opacity:0.6; cursor:not-allowed; transform:none; }
+
+    /* RIGHT PANEL */
+    .right-panel { display:flex; flex-direction:column; gap:14px; }
+
+    .metric-card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 16px; padding: 16px 18px; transition: border-color 0.3s;
+    }
+    .metric-card.warning { border-color: var(--warn); }
+    .metric-card.danger  { border-color: var(--danger); }
+
+    .metric-label {
+      font-family: 'Space Mono', monospace; font-size: 0.6rem;
+      letter-spacing: 0.12em; color: var(--muted);
+      text-transform: uppercase; margin-bottom: 10px;
+      display:flex; align-items:center; gap:8px;
+    }
+    .metric-label::before {
+      content:''; width:6px; height:6px;
+      border-radius:50%; background:var(--accent); flex-shrink:0;
+    }
+
+    .metric-value {
+      font-family: 'Space Mono', monospace;
+      font-size: 1.8rem; font-weight:700;
+      color: #fff; line-height:1; margin-bottom:10px;
+    }
+    .metric-value .unit { font-size:0.75rem; color:var(--muted); font-weight:400; }
+
+    .progress-track {
+      height:4px; background:var(--border);
+      border-radius:2px; overflow:hidden;
+    }
+    .progress-fill {
+      height:100%; border-radius:2px; background:var(--accent);
+      transition: width 0.3s, background 0.3s;
+    }
+
+    /* Estado general */
+    .state-card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 16px; padding: 20px; text-align:center;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      gap:8px; transition: all 0.4s; min-height:130px;
+    }
+    .state-card.ok      { border-color:var(--accent);  background:rgba(0,212,170,0.05); }
+    .state-card.warning { border-color:var(--warn);    background:rgba(255,107,53,0.05); }
+    .state-card.danger  { border-color:var(--danger);  background:rgba(255,45,85,0.08); }
+
+    .state-emoji { font-size:2.2rem; }
+    .state-title { font-weight:800; font-size:1rem; color:#fff; }
+    .state-desc  {
+      font-family:'Space Mono',monospace; font-size:0.6rem;
+      color:var(--muted); line-height:1.5; text-align:center;
+    }
+
+    /* Log */
+    .log-card {
+      background: var(--panel); border:1px solid var(--border);
+      border-radius:16px; padding:16px 18px;
+    }
+    .log-title {
+      font-family:'Space Mono',monospace; font-size:0.6rem;
+      letter-spacing:0.12em; color:var(--muted);
+      text-transform:uppercase; margin-bottom:10px;
+    }
+    .log-list {
+      display:flex; flex-direction:column; gap:4px;
+      max-height:90px; overflow-y:auto;
+    }
+    .log-item {
+      font-family:'Space Mono',monospace; font-size:0.6rem;
+      color:var(--muted); display:flex; justify-content:space-between;
+      padding:4px 0; border-bottom:1px solid var(--border);
+    }
+    .log-item .log-type { color:var(--warn); }
+
+    /* ALERTA FLOTANTE */
+    .alert-banner {
+      position: fixed; top:24px; left:50%;
+      transform: translateX(-50%) translateY(-200px);
+      background: var(--danger); color:#fff;
+      font-family:'Syne',sans-serif; font-weight:700; font-size:1rem;
+      padding:16px 32px; border-radius:16px;
+      box-shadow:0 8px 40px rgba(255,45,85,0.5);
+      z-index:1000; transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
+      text-align:center; min-width:300px; cursor:pointer;
+    }
+    .alert-banner.show { transform:translateX(-50%) translateY(0); }
+    .alert-sub {
+      font-family:'Space Mono',monospace; font-size:0.62rem;
+      font-weight:400; opacity:0.85; display:block; margin-top:4px;
+    }
+
+    /* RESPONSIVE */
+    @media (max-width:700px) {
+      .main-grid { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">👁</div>
+      <div>
+        <h1>EyeGuard</h1>
+        <span class="logo-sub">MONITOR DE FATIGA OCULAR</span>
+      </div>
+    </div>
+    <div class="status-badge" id="statusBadge">INACTIVO</div>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- Cámara -->
+    <div class="camera-panel">
+      <div class="camera-header">
+        <h2>Cámara en tiempo real</h2>
+        <div class="rec-dot" id="recDot"></div>
+      </div>
+      <div class="video-container">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="canvas"></canvas>
+
+        <div class="overlay-info" id="overlayInfo">
+          <div class="overlay-chip">EAR <span id="earChip">—</span></div>
+          <div class="overlay-chip">Sacadas <span id="saccadeChip">—</span></div>
+          <div class="overlay-chip">FPS <span id="fpsChip">—</span></div>
+        </div>
+
+        <div class="start-overlay" id="startOverlay">
+          <div style="font-size:3rem">👁</div>
+          <button class="btn-start" id="btnStart">Iniciar detección</button>
+          <p>Necesita acceso a tu cámara.<br>Todo el procesamiento es local,<br>nada se envía a servidores.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel derecho -->
+    <div class="right-panel">
+
+      <div class="metric-card" id="earCard">
+        <div class="metric-label">Apertura ocular (EAR)</div>
+        <div class="metric-value" id="earValue">—<span class="unit"></span></div>
+        <div class="progress-track">
+          <div class="progress-fill" id="earBar" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="metric-card" id="saccadeCard">
+        <div class="metric-label">Velocidad de sacadas</div>
+        <div class="metric-value" id="saccadeValue">—<span class="unit"></span></div>
+        <div class="progress-track">
+          <div class="progress-fill" id="saccadeBar" style="width:0%; background:var(--accent2)"></div>
+        </div>
+      </div>
+
+      <div class="state-card" id="stateCard">
+        <div class="state-emoji" id="stateEmoji">💤</div>
+        <div class="state-title" id="stateTitle">Esperando...</div>
+        <div class="state-desc" id="stateDesc">Inicia la detección para monitorear tus ojos</div>
+      </div>
+
+      <div class="log-card">
+        <div class="log-title">Registro de alertas</div>
+        <div class="log-list" id="logList">
+          <div class="log-item"><span style="color:var(--muted)">Sin alertas aún</span></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="alert-banner" id="alertBanner">
+  😴 ¡Tus ojos están cansados!
+  <span class="alert-sub">Descansa la vista por al menos 20 segundos</span>
+</div>
+
+<script>
+  // ── Landmarks MediaPipe ──────────────────────────────────────────────────
+  const LEFT_EYE   = [362,385,387,263,373,380];
+  const RIGHT_EYE  = [33,160,158,133,153,144];
+  const LEFT_IRIS  = [468,469,470,471,472];
+  const RIGHT_IRIS = [473,474,475,476,477];
+
+  // ── Configuración ────────────────────────────────────────────────────────
+  const EAR_THRESHOLD  = 0.22;
+  const SACCADE_SLOW   = 2.0;
+  const FATIGUE_LIMIT  = 60;
+  const ALERT_COOLDOWN = 30000;
+
+  // ── Estado ───────────────────────────────────────────────────────────────
+  let earHistory = [], saccadeHistory = [];
+  let prevIrisLeft = null, prevIrisRight = null;
+  let fatigueScore = 0;
+  let lastAlertTime = 0, alertCount = 0;
+  let frameCount = 0, lastFpsTime = Date.now(), fps = 0;
+  let running = false;
+
+  // ── DOM ──────────────────────────────────────────────────────────────────
+  const video        = document.getElementById('video');
+  const canvas       = document.getElementById('canvas');
+  const ctx          = canvas.getContext('2d');
+  const btnStart     = document.getElementById('btnStart');
+  const startOverlay = document.getElementById('startOverlay');
+  const statusBadge  = document.getElementById('statusBadge');
+  const recDot       = document.getElementById('recDot');
+  const overlayInfo  = document.getElementById('overlayInfo');
+  const earChip      = document.getElementById('earChip');
+  const saccadeChip  = document.getElementById('saccadeChip');
+  const fpsChip      = document.getElementById('fpsChip');
+  const earValue     = document.getElementById('earValue');
+  const saccadeValue = document.getElementById('saccadeValue');
+  const earBar       = document.getElementById('earBar');
+  const saccadeBar   = document.getElementById('saccadeBar');
+  const earCard      = document.getElementById('earCard');
+  const saccadeCard  = document.getElementById('saccadeCard');
+  const stateCard    = document.getElementById('stateCard');
+  const stateEmoji   = document.getElementById('stateEmoji');
+  const stateTitle   = document.getElementById('stateTitle');
+  const stateDesc    = document.getElementById('stateDesc');
+  const alertBanner  = document.getElementById('alertBanner');
+  const logList      = document.getElementById('logList');
+
+  // ── Matemáticas ──────────────────────────────────────────────────────────
+  function dist(a, b) {
+    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+  }
+
+  function calcEAR(px, idx) {
+    const [p1,p2,p3,p4,p5,p6] = idx.map(i => px[i]);
+    return (dist(p2,p6) + dist(p3,p5)) / (2.0 * dist(p1,p4));
+  }
+
+  function irisCenter(px, idx) {
+    const pts = idx.map(i => px[i]);
+    return {
+      x: pts.reduce((s,p) => s+p.x, 0) / pts.length,
+      y: pts.reduce((s,p) => s+p.y, 0) / pts.length
+    };
+  }
+
+  function avg(arr) { return arr.reduce((a,b) => a+b, 0) / arr.length; }
+
+  function loadScript(src) {
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
+  // ── Inicio ───────────────────────────────────────────────────────────────
+  async function startDetection() {
+    btnStart.textContent = 'Cargando modelo...';
+    btnStart.disabled = true;
+
+    try {
+      await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js');
+    } catch(e) {
+      btnStart.textContent = 'Error de red — reintenta';
+      btnStart.disabled = false;
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width:640, height:480, facingMode:'user' }
+      });
+    } catch(e) {
+      btnStart.textContent = 'Sin permiso de cámara';
+      btnStart.disabled = false;
+      stateTitle.textContent = 'Activa la cámara en tu navegador';
+      return;
+    }
+
+    video.srcObject = stream;
+    await new Promise(r => { video.onloadedmetadata = r; });
+    video.play();
+
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    const faceMesh = new FaceMesh({
+      locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${f}`
+    });
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    faceMesh.onResults(onResults);
+
+    running = true;
+    startOverlay.classList.add('hidden');
+    statusBadge.textContent = 'ACTIVO';
+    statusBadge.classList.add('active');
+    recDot.classList.add('active');
+    overlayInfo.style.display = 'flex';
+
+    async function loop() {
+      if (!running) return;
+      try { await faceMesh.send({ image: video }); } catch(e) {}
+      frameCount++;
+      const now = Date.now();
+      if (now - lastFpsTime >= 1000) {
+        fps = frameCount; frameCount = 0; lastFpsTime = now;
+        fpsChip.textContent = fps;
+      }
+      requestAnimationFrame(loop);
+    }
+    loop();
+  }
+
+  // ── Procesar frame ───────────────────────────────────────────────────────
+  function onResults(results) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!results.multiFaceLandmarks || !results.multiFaceLandmarks[0]) {
+      setStateCard('neutral','🔍','Sin rostro','Acércate a la cámara o mejora la iluminación');
+      fatigueScore = Math.max(fatigueScore - 1, 0);
+      return;
+    }
+
+    const lm = results.multiFaceLandmarks[0];
+    const W = canvas.width, H = canvas.height;
+    const px = lm.map(p => ({ x: p.x * W, y: p.y * H }));
+
+    // EAR
+    const earL = calcEAR(px, LEFT_EYE);
+    const earR = calcEAR(px, RIGHT_EYE);
+    const ear  = (earL + earR) / 2;
+    earHistory.push(ear);
+    if (earHistory.length > 30) earHistory.shift();
+    const avgEar = avg(earHistory);
+
+    // Sacadas (iris)
+    const hasIris = lm.length > 472;
+    let saccadeSpeed = 0;
+    if (hasIris) {
+      const iL = irisCenter(px, LEFT_IRIS);
+      const iR = irisCenter(px, RIGHT_IRIS);
+      if (prevIrisLeft) {
+        saccadeSpeed = (dist(iL, prevIrisLeft) + dist(iR, prevIrisRight)) / 2;
+      }
+      prevIrisLeft = iL;
+      prevIrisRight = iR;
+      saccadeHistory.push(saccadeSpeed);
+      if (saccadeHistory.length > 30) saccadeHistory.shift();
+    }
+    const avgSaccade = saccadeHistory.length > 0 ? avg(saccadeHistory) : 0;
+
+    // Dibujar contornos de ojos
+    drawEyeContour(px, LEFT_EYE,  avgEar);
+    drawEyeContour(px, RIGHT_EYE, avgEar);
+
+    // Fatiga
+    const earTired     = avgEar < EAR_THRESHOLD;
+    const saccadeTired = hasIris && avgSaccade < SACCADE_SLOW && saccadeHistory.length > 10;
+
+    if (earTired || saccadeTired) fatigueScore = Math.min(fatigueScore + 1, FATIGUE_LIMIT * 1.5);
+    else                          fatigueScore = Math.max(fatigueScore - 0.5, 0);
+
+    updateUI(avgEar, avgSaccade, fatigueScore, earTired, saccadeTired, hasIris);
+  }
+
+  function drawEyeContour(px, indices, ear) {
+    const color = ear < EAR_THRESHOLD ? '#ff2d55' : ear < 0.28 ? '#ff6b35' : '#00d4aa';
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = color;
+    indices.forEach((idx, i) => {
+      // espejear X para que coincida con el video invertido
+      const mx = canvas.width - px[idx].x;
+      if (i === 0) ctx.moveTo(mx, px[idx].y);
+      else         ctx.lineTo(mx, px[idx].y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  // ── UI ───────────────────────────────────────────────────────────────────
+  function updateUI(ear, saccade, fatigue, earTired, saccadeTired, hasIris) {
+    // EAR card
+    earValue.innerHTML = ear.toFixed(3) + '<span class="unit"> EAR</span>';
+    earBar.style.width      = Math.min(ear / 0.4 * 100, 100) + '%';
+    earBar.style.background = earTired ? 'var(--danger)' : ear < 0.28 ? 'var(--warn)' : 'var(--accent)';
+    earChip.textContent     = ear.toFixed(3);
+    earCard.className       = 'metric-card' + (earTired ? ' danger' : ear < 0.28 ? ' warning' : '');
+
+    // Saccade card
+    if (hasIris) {
+      saccadeValue.innerHTML  = saccade.toFixed(1) + '<span class="unit"> px/f</span>';
+      saccadeBar.style.width  = Math.min(saccade / 8 * 100, 100) + '%';
+      saccadeBar.style.background = saccadeTired ? 'var(--warn)' : 'var(--accent2)';
+      saccadeChip.textContent = saccade.toFixed(1);
+      saccadeCard.className   = 'metric-card' + (saccadeTired ? ' warning' : '');
+    } else {
+      saccadeValue.innerHTML  = 'N/A<span class="unit"> (iris)</span>';
+      saccadeChip.textContent = 'N/A';
+    }
+
+    // Estado
+    const pct = fatigue / FATIGUE_LIMIT;
+    if (pct < 0.3)       setStateCard('ok',      '✅', 'Ojos descansados',   'Tu visión luce bien. Sigue así.');
+    else if (pct < 0.7)  setStateCard('warning',  '⚠️', 'Ligera fatiga',      'Toma un descanso pronto.\nRegla 20-20-20.');
+    else                { setStateCard('danger',  '🔴', '¡Fatiga alta!',      'Cierra los ojos 20 segundos\no mira al horizonte.'); triggerAlert(); }
+  }
+
+  function setStateCard(type, emoji, title, desc) {
+    stateCard.className  = 'state-card ' + type;
+    stateEmoji.textContent = emoji;
+    stateTitle.textContent = title;
+    stateDesc.textContent  = desc;
+  }
+
+  // ── Alerta ───────────────────────────────────────────────────────────────
+  function triggerAlert() {
+    const now = Date.now();
+    if (now - lastAlertTime < ALERT_COOLDOWN) return;
+    lastAlertTime = now;
+    alertCount++;
+
+    alertBanner.classList.add('show');
+    setTimeout(() => alertBanner.classList.remove('show'), 5000);
+
+    // Notificación del sistema
+    if (Notification.permission === 'granted') {
+      new Notification('EyeGuard — ¡Descansa!', {
+        body: 'Fatiga detectada. Cierra los ojos 20 segundos.'
+      });
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+
+    // Beep
+    try {
+      const ac   = new AudioContext();
+      const osc  = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.08, ac.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.5);
+      osc.start(); osc.stop(ac.currentTime + 0.5);
+    } catch(e) {}
+
+    // Log
+    const t = new Date().toLocaleTimeString('es-MX', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const item = document.createElement('div');
+    item.className = 'log-item';
+    item.innerHTML = `<span class="log-type">Fatiga #${alertCount}</span><span>${t}</span>`;
+    if (logList.firstElementChild?.textContent.includes('Sin alertas')) logList.innerHTML = '';
+    logList.prepend(item);
+  }
+
+  btnStart.addEventListener('click', startDetection);
+  alertBanner.addEventListener('click', () => alertBanner.classList.remove('show'));
+</script>
+</body>
+</html>
